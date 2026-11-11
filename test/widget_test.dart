@@ -1,30 +1,34 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ppr_watcher/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('ParkingFacility.fromJson feldolgozza az API válaszát', () {
+    final pf = ParkingFacility.fromJson({
+      'external_id': 'P061',
+      'location_description': 'KÖKI Terminál P+R parkolóház',
+      'capacity': 330,
+      'free_capacity': 280,
+      'opening_hours': '00:00-24:00',
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(pf.id, 'P061');
+    expect(pf.name, 'KÖKI Terminál P+R parkolóház');
+    expect(pf.capacity, 330);
+    expect(pf.free, 280);
+    expect(pf.occupied, 50);
+    expect(pf.freeRatio, closeTo(280 / 330, 1e-9));
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('szövegként érkező számokat is kezel', () {
+    final pf = ParkingFacility.fromJson({
+      'external_id': 'P051',
+      'capacity': '206',
+      'free_capacity': '184',
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(pf.capacity, 206);
+    expect(pf.free, 184);
+    expect(pf.name, 'Ismeretlen parkoló');
   });
 }

@@ -1,121 +1,337 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
-void main() {
-  runApp(const MyApp());
+/// A figyelt parkolók azonosítói (a kozutfigyelo.budapestkozut.hu `id` paramétere).
+const List<String> watchedIds = ['P061', 'P051'];
+
+/// Lekérdezési ciklus.
+const Duration pollInterval = Duration(seconds: 10);
+
+void main() => runApp(const PrApp());
+
+// ---------------------------------------------------------------------------
+// Modell
+// ---------------------------------------------------------------------------
+
+class ParkingFacility {
+  final String id;
+  final String name;
+  final int capacity;
+  final int free;
+  final String? openingHours;
+  final DateTime fetchedAt;
+
+  const ParkingFacility({
+    required this.id,
+    required this.name,
+    required this.capacity,
+    required this.free,
+    required this.fetchedAt,
+    this.openingHours,
+  });
+
+  int get occupied => (capacity - free).clamp(0, capacity);
+  double get freeRatio => capacity == 0 ? 0 : free / capacity;
+
+  static int _toInt(dynamic v) =>
+      v is int ? v : int.tryParse(v?.toString() ?? '') ?? 0;
+
+  factory ParkingFacility.fromJson(Map<String, dynamic> j) => ParkingFacility(
+        id: j['external_id']?.toString() ?? '?',
+        name: j['location_description']?.toString() ?? 'Ismeretlen parkoló',
+        capacity: _toInt(j['capacity']),
+        free: _toInt(j['free_capacity']),
+        openingHours: j['opening_hours']?.toString(),
+        fetchedAt: DateTime.now(),
+      );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
 
-  // This widget is the root of your application.
+class KozutApi {
+  static const _url = 'https://kozutfigyelo-back.budapestkozut.hu/api/ikszr/get';
+  final http.Client _client;
+
+  KozutApi([http.Client? client]) : _client = client ?? http.Client();
+
+  Future<ParkingFacility> fetch(String id) async {
+    final res = await _client
+        .post(
+          Uri.parse(_url),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'objectType': 'parking-facilities', 'externalId': id}),
+        )
+        .timeout(const Duration(seconds: 8));
+
+    if (res.statusCode != 200) {
+      throw Exception('HTTP ${res.statusCode}');
+    }
+    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final instance = body['data']?['instance'];
+    if (body['success'] != true || instance == null) {
+      throw Exception(body['message']?.toString().isNotEmpty == true
+          ? body['message']
+          : 'Hibás válasz');
+    }
+    return ParkingFacility.fromJson(instance as Map<String, dynamic>);
+  }
+
+  void dispose() => _client.close();
+}
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+
+class PrApp extends StatelessWidget {
+  const PrApp({super.key});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'P+R figyelő',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+        darkTheme: ThemeData(
+          colorSchemeSeed: Colors.indigo,
+          brightness: Brightness.dark,
+          useMaterial3: true,
+        ),
+        home: const MonitorPage(),
+      );
+}
+
+class MonitorPage extends StatefulWidget {
+  const MonitorPage({super.key});
+
+  @override
+  State<MonitorPage> createState() => _MonitorPageState();
+}
+
+class _MonitorPageState extends State<MonitorPage> with WidgetsBindingObserver {
+  final _api = KozutApi();
+  final Map<String, ParkingFacility> _data = {};
+  final Map<String, String> _errors = {};
+  final Map<String, int> _delta = {}; // változás az előző lekérdezéshez képest
+  Timer? _timer;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _start();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    _api.dispose();
+    super.dispose();
+  }
+
+  // Háttérben nem kérdezünk (akku + adatforgalom), előtérbe jövéskor azonnal frissít.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _start();
+    } else if (state == AppLifecycleState.paused) {
+      _timer?.cancel();
+    }
+  }
+
+  void _start() {
+    _timer?.cancel();
+    _refresh();
+    _timer = Timer.periodic(pollInterval, (_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    if (_loading) return; // ne fusson két lekérdezés egymásra
+    setState(() => _loading = true);
+
+    await Future.wait(watchedIds.map((id) async {
+      try {
+        final pf = await _api.fetch(id);
+        final prev = _data[id];
+        if (prev != null && prev.free != pf.free) {
+          _delta[id] = pf.free - prev.free;
+        }
+        _data[id] = pf;
+        _errors.remove(id);
+      } catch (e) {
+        _errors[id] = e.toString();
+      }
+    }));
+
+    if (mounted) setState(() => _loading = false);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('P+R parkolók'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: _loading
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Frissítés',
+                    onPressed: _refresh),
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            const Text('You have pushed the button this many times:'),
+            for (final id in watchedIds)
+              ParkingCard(
+                id: id,
+                facility: _data[id],
+                error: _errors[id],
+                delta: _delta[id],
+              ),
+            const SizedBox(height: 8),
             Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+              'Automatikus frissítés ${pollInterval.inSeconds} mp-enként • '
+              'Forrás: Budapest Közút Közútfigyelő',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+}
+
+class ParkingCard extends StatelessWidget {
+  final String id;
+  final ParkingFacility? facility;
+  final String? error;
+  final int? delta;
+
+  const ParkingCard({
+    super.key,
+    required this.id,
+    this.facility,
+    this.error,
+    this.delta,
+  });
+
+  Color _statusColor(double ratio) {
+    if (ratio <= 0) return Colors.red;
+    if (ratio < 0.25) return Colors.orange;
+    return Colors.green;
+  }
+
+  String _hhmmss(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}:'
+      '${t.second.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final pf = facility;
+
+    if (pf == null) {
+      return Card(
+        child: ListTile(
+          title: Text(id),
+          subtitle: Text(error ?? 'Betöltés...'),
+          leading: error == null
+              ? const CircularProgressIndicator()
+              : const Icon(Icons.error_outline, color: Colors.red),
+        ),
+      );
+    }
+
+    final color = _statusColor(pf.freeRatio);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.local_parking, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(pf.name,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+              Text(pf.id, style: theme.textTheme.labelSmall),
+            ]),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('${pf.free}',
+                    style: theme.textTheme.displayMedium
+                        ?.copyWith(color: color, fontWeight: FontWeight.bold)),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10, left: 6),
+                  child: Text('/ ${pf.capacity} szabad',
+                      style: theme.textTheme.titleMedium),
+                ),
+                const Spacer(),
+                if (delta != null && delta != 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      delta! > 0 ? '▲ +$delta' : '▼ $delta',
+                      style: TextStyle(
+                        color: delta! > 0 ? Colors.green : Colors.red,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: pf.capacity == 0 ? 0 : pf.occupied / pf.capacity,
+                minHeight: 10,
+                color: color,
+                backgroundColor: color.withValues(alpha: 0.15),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Text(
+                'Telítettség: ${((1 - pf.freeRatio) * 100).round()}%',
+                style: theme.textTheme.bodySmall,
+              ),
+              const Spacer(),
+              Text('Frissítve: ${_hhmmss(pf.fetchedAt)}',
+                  style: theme.textTheme.bodySmall),
+            ]),
+            if (error != null) ...[
+              const SizedBox(height: 6),
+              Text('Utolsó lekérdezés sikertelen – régi adat látszik',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.orange)),
+            ],
+          ],
+        ),
       ),
     );
   }
