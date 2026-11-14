@@ -1,0 +1,60 @@
+:root {
+  color-scheme: light dark;
+
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --text: #15171c;
+  --muted: #646a76;
+  --line: #e2e5eb;
+  --brand: #2a4fd6;
+
+  --ok: #1f9d55;
+  --low: #d97706;
+  --full: #d33a3a;
+  --track: #e7eaf0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1015;
+    --surface: #181b22;
+    --text: #eef0f4;
+    --muted: #9aa1ad;
+    --line: #262a33;
+    --brand: #6f8cff;
+
+    --ok: #3ccf7a;
+    --low: #f5a524;
+    --full: #ff6363;
+    --track: #262a33;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -1,0 +1,116 @@
+<header class="bar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">P</span>
+    <div>
+      <h1>P+R figyelő</h1>
+      <p class="sub">
+        @if (secondsAgo() !== null) {
+          <span [class.warn]="stale() || lastFetchFailed()">
+            Frissítve {{ lastFetched() | date: 'HH:mm:ss' }}
+            · {{ secondsAgo() }} mp-e
+            @if (lastFetchFailed()) { · hiba }
+          </span>
+        } @else {
+          Betöltés…
+        }
+      </p>
+    </div>
+  </div>
+
+  <div class="actions">
+    @if (wakeLock.supported) {
+      <button
+        type="button"
+        class="icon-btn"
+        [class.on]="wakeLock.active()"
+        (click)="wakeLock.toggle()"
+        [attr.aria-pressed]="wakeLock.wanted()"
+        [title]="wakeLock.active() ? 'Képernyő ébren tartva – kikapcsolás' : 'Képernyő ébren tartása'"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          @if (wakeLock.wanted()) {
+            <circle cx="12" cy="12" r="4.2" />
+            <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" />
+          } @else {
+            <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+          }
+        </svg>
+        <span class="sr-only">Képernyő ébren tartása</span>
+      </button>
+    }
+    <button
+      type="button"
+      class="icon-btn"
+      [class.spin]="loading()"
+      [disabled]="loading()"
+      (click)="refresh()"
+      title="Frissítés most"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+        <path d="M20 4v7h-7" />
+      </svg>
+      <span class="sr-only">Frissítés</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  @for (card of cards(); track card.id) {
+    @if (card.facility; as pf) {
+      <article class="card" [attr.data-status]="statusOf(pf)">
+        <div class="card-head">
+          <h2>{{ pf.name }}</h2>
+          <span class="code">{{ pf.id }}</span>
+        </div>
+
+        <div class="figure">
+          <span class="free">{{ pf.free }}</span>
+          <span class="cap">/ {{ pf.capacity }} szabad</span>
+          @if (card.delta) {
+            <span class="delta" [class.up]="card.delta > 0" [class.down]="card.delta < 0">
+              {{ card.delta > 0 ? '▲ +' + card.delta : '▼ ' + card.delta }}
+            </span>
+          }
+        </div>
+
+        <div
+          class="meter"
+          role="meter"
+          aria-label="Telítettség"
+          [attr.aria-valuenow]="occupied(pf)"
+          aria-valuemin="0"
+          [attr.aria-valuemax]="pf.capacity"
+        >
+          <div class="fill" [style.width.%]="(1 - freeRatio(pf)) * 100"></div>
+        </div>
+
+        <div class="meta">
+          <span>Telítettség: {{ (1 - freeRatio(pf)) * 100 | number: '1.0-0' }}%</span>
+          @if (card.error) {
+            <span class="warn">Utolsó lekérdezés sikertelen</span>
+          }
+        </div>
+      </article>
+    } @else {
+      <article class="card placeholder">
+        <div class="card-head">
+          <h2>{{ card.id }}</h2>
+        </div>
+        @if (card.error) {
+          <p class="warn">Nem sikerült betölteni: {{ card.error }}</p>
+        } @else {
+          <div class="skeleton"></div>
+        }
+      </article>
+    }
+  }
+</main>
+
+<footer>
+  Automatikus frissítés {{ pollSeconds }} mp-enként, amíg az oldal előtérben van.
+  @if (wakeLock.supported) {
+    <br />Képernyő ébren tartása: {{ wakeLock.active() ? 'bekapcsolva' : (wakeLock.wanted() ? 'érintsd meg a képernyőt az aktiváláshoz' : 'kikapcsolva') }}.
+  }
+  <br />Forrás: <a href="https://kozutfigyelo.budapestkozut.hu" target="_blank" rel="noopener">Budapest Közút – Közútfigyelő</a>
+</footer>

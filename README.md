@@ -1,6 +1,11 @@
 # P+R Watcher
 
-Budapesti P+R parkolók szabad helyeinek valós idejű figyelése Flutterben.
+Budapesti P+R parkolók szabad helyeinek valós idejű figyelése.
+
+Két változat van a repóban:
+
+- **Flutter app** – a repó gyökerében (ez a leírás)
+- **Webes Angular app** – az [`angular/`](angular/) mappában, GitHub Pagesre telepítve, iPhone-on kezdőképernyőre tehető
 
 Figyelt parkolók (alapértelmezés):
 
