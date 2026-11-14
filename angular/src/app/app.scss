@@ -306,6 +306,36 @@ main {
   }
 }
 
+/*
+  Sötét módban (este, autóban) nem vakíthat: majdnem fekete háttér, borostyán ikon és szöveg,
+  a pulzálás csak sötét árnyalatok között vált, a fényerő-különbség kicsi.
+*/
+@media (prefers-color-scheme: dark) {
+  .wake-overlay {
+    background: #120d03;
+    color: #f5a524;
+    animation-name: wake-breathe-dark;
+
+    p {
+      color: #c9a25a;
+    }
+  }
+
+  .wake-skip {
+    color: #c9a25a;
+  }
+
+  @keyframes wake-breathe-dark {
+    0%,
+    100% {
+      background: #120d03;
+    }
+    50% {
+      background: #2e2006;
+    }
+  }
+}
+
 /* ---- Lábléc ---- */
 
 footer {
