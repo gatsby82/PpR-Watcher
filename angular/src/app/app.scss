@@ -89,12 +89,25 @@ h1 {
     }
   }
 
+  /* Bekapcsolva, de koppintásra vár: lüktet, hogy feltűnjön */
+  &.waiting {
+    color: var(--low);
+    border-color: color-mix(in srgb, var(--low) 50%, var(--line));
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
   &:disabled {
     cursor: default;
   }
 
   &.spin svg {
     animation: spin 0.9s linear infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--low) 22%, transparent);
   }
 }
 
@@ -247,6 +260,7 @@ footer {
 
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.spin svg,
+  .icon-btn.waiting,
   .skeleton,
   .meter .fill {
     animation: none;

@@ -2,8 +2,10 @@ import { Injectable, signal } from '@angular/core';
 
 /**
  * Ébren tartja a képernyőt, amíg az oldal látható (Screen Wake Lock API).
- * A böngésző a zárat elengedi, ha a lap háttérbe kerül, ezért visszatéréskor újra kérjük.
- * Ha a böngésző felhasználói interakcióhoz köti, az első érintéskor újrapróbáljuk.
+ *
+ * - A böngésző a zárat elengedi, ha a lap háttérbe kerül, ezért visszatéréskor újra kérjük.
+ * - A Safari csak felhasználói koppintásból engedi: ha a kérés elutasítva, a következő
+ *   koppintásnál (bárhol az oldalon) újrapróbáljuk, és ezt a `needsTap` jelzi a felületen.
  */
 @Injectable({ providedIn: 'root' })
 export class WakeLock {
@@ -12,25 +14,47 @@ export class WakeLock {
   readonly wanted = signal(true);
   /** Ténylegesen aktív-e most. */
   readonly active = signal(false);
+  /** Be van kapcsolva, de a böngésző koppintásra vár, mielőtt engedi. */
+  readonly needsTap = signal(false);
 
   private sentinel: WakeLockSentinel | null = null;
-  private retryOnTouch = () => this.acquire();
+  private pending: Promise<void> | null = null;
+  /** A saját kapcsológombra eső koppintást a gomb kezeli (toggle), nem ez. */
+  private readonly retryOnTap = (e: Event) => {
+    const onToggle = (e.target as Element | null)?.closest?.('[data-wakelock-toggle]');
+    if (!onToggle) void this.acquire();
+  };
 
-  async acquire(): Promise<void> {
-    if (!this.supported || !this.wanted() || this.sentinel) return;
-    if (document.visibilityState !== 'visible') return;
+  /** Párhuzamos hívások egyetlen kérésbe futnak össze. */
+  acquire(): Promise<void> {
+    if (!this.supported || !this.wanted() || this.sentinel) return Promise.resolve();
+    if (document.visibilityState !== 'visible') return Promise.resolve();
+    this.pending ??= this.request().finally(() => (this.pending = null));
+    return this.pending;
+  }
+
+  private async request(): Promise<void> {
     try {
-      this.sentinel = await navigator.wakeLock.request('screen');
-      this.active.set(true);
-      document.removeEventListener('pointerdown', this.retryOnTouch);
-      this.sentinel.addEventListener('release', () => {
-        this.sentinel = null;
+      const sentinel = await navigator.wakeLock.request('screen');
+      sentinel.addEventListener('release', () => {
+        if (this.sentinel === sentinel) this.sentinel = null;
         this.active.set(false);
       });
+      // Ha közben kikapcsolták, azonnal elengedjük.
+      if (!this.wanted()) {
+        await sentinel.release();
+        return;
+      }
+      this.sentinel = sentinel;
+      this.active.set(true);
+      this.needsTap.set(false);
+      document.removeEventListener('click', this.retryOnTap, true);
     } catch {
-      // Pl. NotAllowedError: majd az első érintésnél újra megpróbáljuk.
+      // Tipikusan NotAllowedError: a Safari koppintást vár. A `click` felhasználói
+      // aktivációnak számít, ezért arra próbáljuk újra (capture: a gomb előtt fut le).
       this.active.set(false);
-      document.addEventListener('pointerdown', this.retryOnTouch, { once: true });
+      this.needsTap.set(this.wanted());
+      document.addEventListener('click', this.retryOnTap, { capture: true, once: true });
     }
   }
 
@@ -38,10 +62,20 @@ export class WakeLock {
     const s = this.sentinel;
     this.sentinel = null;
     this.active.set(false);
+    this.needsTap.set(false);
+    document.removeEventListener('click', this.retryOnTap, true);
     if (s) await s.release().catch(() => undefined);
   }
 
+  /**
+   * Gombnyomás: ha be van kapcsolva, de még nem aktív, akkor bekapcsolja (nem kikapcsolja).
+   * Egyébként ki/be vált.
+   */
   async toggle(): Promise<void> {
+    if (this.wanted() && !this.active()) {
+      await this.acquire();
+      return;
+    }
     this.wanted.update((w) => !w);
     if (this.wanted()) await this.acquire();
     else await this.release();

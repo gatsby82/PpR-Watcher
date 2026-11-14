@@ -22,10 +22,18 @@
       <button
         type="button"
         class="icon-btn"
+        data-wakelock-toggle
         [class.on]="wakeLock.active()"
+        [class.waiting]="wakeLock.needsTap()"
         (click)="wakeLock.toggle()"
-        [attr.aria-pressed]="wakeLock.wanted()"
-        [title]="wakeLock.active() ? 'Képernyő ébren tartva – kikapcsolás' : 'Képernyő ébren tartása'"
+        [attr.aria-pressed]="wakeLock.active()"
+        [title]="
+          wakeLock.active()
+            ? 'Képernyő ébren tartva – kikapcsolás'
+            : wakeLock.needsTap()
+              ? 'Koppints a képernyő ébren tartásához'
+              : 'Képernyő ébren tartása'
+        "
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           @if (wakeLock.wanted()) {
@@ -110,7 +118,7 @@
 <footer>
   Automatikus frissítés {{ pollSeconds }} mp-enként, amíg az oldal előtérben van.
   @if (wakeLock.supported) {
-    <br />Képernyő ébren tartása: {{ wakeLock.active() ? 'bekapcsolva' : (wakeLock.wanted() ? 'érintsd meg a képernyőt az aktiváláshoz' : 'kikapcsolva') }}.
+    <br />Képernyő ébren tartása: {{ wakeLock.active() ? 'bekapcsolva' : (wakeLock.wanted() ? 'koppints bárhová a bekapcsoláshoz' : 'kikapcsolva') }}.
   }
   <br />Forrás: <a href="https://kozutfigyelo.budapestkozut.hu" target="_blank" rel="noopener">Budapest Közút – Közútfigyelő</a>
 </footer>
