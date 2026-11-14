@@ -67,6 +67,12 @@ export class WakeLock {
     if (s) await s.release().catch(() => undefined);
   }
 
+  /** Kikapcsolja az ébrentartást (pl. az overlay „Most nem” gombja). */
+  async disable(): Promise<void> {
+    this.wanted.set(false);
+    await this.release();
+  }
+
   /**
    * Gombnyomás: ha be van kapcsolva, de még nem aktív, akkor bekapcsolja (nem kikapcsolja).
    * Egyébként ki/be vált.
